@@ -1,6 +1,5 @@
 # GNote2 — 原生 Android 版本功能說明文件
 
-> **版本**：v1.0.8
 > **開發語言**：Kotlin + Jetpack Compose
 > **套件識別碼**：`com.chinhsiang.premiumnotes`
 > **最後更新**：2026-03-03

@@ -98,7 +98,7 @@ fun EditorView(
             TopAppBar(
                 title = { },
                 navigationIcon = {
-                    IconButton(onClick = {
+                    TextButton(onClick = {
                         repo.saveNote(noteId, title, content, isLocked, sharedWithEmails)
                         if (sync.isLoggedIn()) {
                             coroutineScope.launch(Dispatchers.IO) {
@@ -116,6 +116,7 @@ fun EditorView(
                     }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回",
                             tint = MaterialTheme.colorScheme.primary)
+                        Text("返回", color = MaterialTheme.colorScheme.primary, fontSize = 17.sp)
                     }
                 },
                 actions = {

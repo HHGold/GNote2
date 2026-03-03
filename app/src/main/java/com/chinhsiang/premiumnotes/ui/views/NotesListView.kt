@@ -128,10 +128,12 @@ fun NotesListView(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(folderName, fontWeight = FontWeight.Bold) },
+                title = { },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回", tint = MaterialTheme.colorScheme.primary)
+                    TextButton(onClick = onNavigateBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "返回", 
+                            tint = MaterialTheme.colorScheme.primary)
+                        Text("返回", color = MaterialTheme.colorScheme.primary, fontSize = 17.sp)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
