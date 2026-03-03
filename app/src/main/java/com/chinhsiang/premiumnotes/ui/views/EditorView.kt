@@ -178,7 +178,8 @@ fun EditorView(
                 .padding(paddingValues)
                 .padding(horizontal = 20.dp, vertical = 8.dp)
         ) {
-            // 顯示共享名單 (小頭像或文字)
+            // 隱藏共享名單文字 (依使用者要求不顯示)
+            /*
             if (sharedWithEmails.isNotEmpty()) {
                 Text(
                     text = "分享給: ${sharedWithEmails.joinToString(", ")}",
@@ -187,6 +188,7 @@ fun EditorView(
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
             }
+            */
 
             TextField(
                 value = title,
@@ -296,15 +298,20 @@ fun EditorView(
             },
             confirmButton = {
                 Button(onClick = {
-                    if (shareEmail.contains("@")) {
-                        if (!sharedWithEmails.contains(shareEmail)) {
-                            sharedWithEmails = sharedWithEmails + shareEmail
-                            shareEmail = ""
-                        } else {
-                            Toast.makeText(context, "該 Email 已在名單中", Toast.LENGTH_SHORT).show()
-                        }
+                    val trimmedEmail = shareEmail.trim()
+                    if (trimmedEmail.isEmpty()) return@Button
+                    
+                    val finalEmail = if (trimmedEmail.contains("@")) {
+                        trimmedEmail
                     } else {
-                        Toast.makeText(context, "請輸入有效的 Email", Toast.LENGTH_SHORT).show()
+                        "$trimmedEmail@gmail.com"
+                    }
+
+                    if (!sharedWithEmails.contains(finalEmail)) {
+                        sharedWithEmails = sharedWithEmails + finalEmail
+                        shareEmail = ""
+                    } else {
+                        Toast.makeText(context, "該 Email 已在名單中", Toast.LENGTH_SHORT).show()
                     }
                 }) { Text("加入") }
             },
