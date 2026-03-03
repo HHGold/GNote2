@@ -15,8 +15,8 @@ android {
         minSdk = 24
         targetSdk = 34
         // 從環境變數讀取版本資訊 (用於 GitHub Actions)，防呆處理空字串
-        versionCode = System.getenv("APP_VERSION_CODE")?.takeIf { it.isNotBlank() }?.toIntOrNull() ?: 10008
-        versionName = System.getenv("APP_VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.0.8"
+        versionCode = System.getenv("APP_VERSION_CODE")?.takeIf { it.isNotBlank() }?.toIntOrNull() ?: 10009
+        versionName = System.getenv("APP_VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.01"
     }
 
 
