@@ -132,33 +132,38 @@ fun EditorView(
                             tint = if (sharedWithEmails.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
 
-                    // 鎖定按鈕
-                    IconButton(onClick = {
-                        if (!isLocked) {
-                            if (BiometricHelper.canAuthenticate(context)) {
-                                isLocked = true
-                                Toast.makeText(context, "這篇筆記已上鎖", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "此裝置不支援生物辨識", Toast.LENGTH_LONG).show()
-                            }
-                        } else {
-                            BiometricHelper.authenticate(
-                                activity = context as FragmentActivity,
-                                onSuccess = {
-                                    isLocked = false
-                                    Toast.makeText(context, "已移除鎖定", Toast.LENGTH_SHORT).show()
-                                },
-                                onError = { error ->
-                                    Toast.makeText(context, "驗證失敗: $error", Toast.LENGTH_SHORT).show()
+                    // 鎖定按鈕 (共享的備忘錄不允許上鎖)
+                    if (!isSharedNote && sharedWithEmails.isEmpty()) {
+                        IconButton(onClick = {
+                            if (!isLocked) {
+                                if (BiometricHelper.canAuthenticate(context)) {
+                                    isLocked = true
+                                    Toast.makeText(context, "這篇筆記已上鎖", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "此裝置不支援生物辨識", Toast.LENGTH_LONG).show()
                                 }
+                            } else {
+                                BiometricHelper.authenticate(
+                                    activity = context as FragmentActivity,
+                                    onSuccess = {
+                                        isLocked = false
+                                        Toast.makeText(context, "已移除鎖定", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onError = { error ->
+                                        Toast.makeText(context, "驗證失敗: $error", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            }
+                        }) {
+                            Icon(
+                                imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                                contentDescription = "上鎖/解鎖",
+                                tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    }) {
-                        Icon(
-                            imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                            contentDescription = "上鎖/解鎖",
-                            tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    } else if (isLocked) {
+                        // 如果原本有鎖但後來變共享(極少見)，自動解鎖以確保共享者可看，或至少不顯示鎖定按鈕
+                        isLocked = false
                     }
 
                     IconButton(onClick = { showDeleteDialog = true }) {
