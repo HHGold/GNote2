@@ -25,9 +25,6 @@ class FirestoreSync {
     // 個人筆記：users/{uid}/notes/
     private fun notesRef(uid: String) = db.collection("users").document(uid).collection("notes")
 
-    // 所有筆記的查詢（用於搜尋分享給我的筆記）
-    private fun allNotesQuery() = db.collectionGroup("notes")
-
     // ===== 即時監聽（Snapshot Listener → Flow）=====
 
     /** 即時監聽雲端資料夾，有變動就推送新列表 */
@@ -58,21 +55,6 @@ class FirestoreSync {
         awaitClose { listener.remove() }
     }
 
-    /** 即時監聽分享給我的雲端筆記 */
-    fun realtimeSharedNotesFlow(): Flow<List<Note>> = callbackFlow {
-        val email = email ?: run { close(); return@callbackFlow }
-        // 查詢 sharedWithEmails 包含當前使用者 Email 的所有筆記
-        val query = allNotesQuery().whereArrayContains("sharedWithEmails", email)
-        val listener = query.addSnapshotListener { snapshot, error ->
-            if (error != null || snapshot == null) return@addSnapshotListener
-            val notes = snapshot.documents.mapNotNull { doc ->
-                // 過濾掉自己的筆記（因為 realtimeNotesFlow 已經監聽了）
-                val ownerId = doc.getString("ownerId")
-                if (ownerId == uid) return@mapNotNull null
-                parseNote(doc)?.copy(folderId = "shared")
-            }
-            trySend(notes)
-        }
         awaitClose { listener.remove() }
     }
 
@@ -147,22 +129,9 @@ class FirestoreSync {
     suspend fun fetchNotes(): List<Note> {
         return try {
             val uid = uid ?: return emptyList()
-            val email = email ?: return emptyList()
-            
-            // 1. 抓取自己的筆記
-            val ownNotes = notesRef(uid).get().await().documents.mapNotNull { doc ->
+            notesRef(uid).get().await().documents.mapNotNull { doc ->
                 parseNote(doc)
             }
-            
-            // 2. 抓取分享給我的筆記
-            val sharedNotes = allNotesQuery()
-                .whereArrayContains("sharedWithEmails", email)
-                .get().await().documents.mapNotNull { doc ->
-                    val note = parseNote(doc)
-                    if (note?.ownerId == uid) null else note?.copy(folderId = "shared")
-                }
-            
-            ownNotes + sharedNotes
         } catch (_: Throwable) { emptyList() }
     }
 

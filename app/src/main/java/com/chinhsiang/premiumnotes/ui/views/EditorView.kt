@@ -276,10 +276,9 @@ fun EditorView(
             },
             confirmButton = {
                 Button(onClick = {
-                    val targetEmail = shareEmail.trim().lowercase()
-                    if (targetEmail.contains("@")) {
-                        if (!sharedWithEmails.contains(targetEmail)) {
-                            sharedWithEmails = sharedWithEmails + targetEmail
+                    if (shareEmail.contains("@")) {
+                        if (!sharedWithEmails.contains(shareEmail)) {
+                            sharedWithEmails = sharedWithEmails + shareEmail
                             shareEmail = ""
                         } else {
                             Toast.makeText(context, "該 Email 已在名單中", Toast.LENGTH_SHORT).show()
