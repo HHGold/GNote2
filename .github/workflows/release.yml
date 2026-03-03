@@ -1,0 +1,66 @@
+name: Android Release Build
+
+on:
+  push:
+    tags:
+      - 'v*' # 意思是當您上傳像 v1.0.0 這樣的標籤時，就會觸發自動打包
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" > keystore.base64
+          base64 --decode keystore.base64 > app/release.p12
+
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          # 取得標籤名稱 (例如 v1.0.5)
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          # 去掉開頭的 v 變成 1.0.5
+          VERSION_NAME=${TAG_NAME#v}
+          # 拆分版本號並計算出一個整數 Version Code (例如 10005)
+          VERSION_CODE_RAW=$(echo $VERSION_NAME | sed 's/\./ /g')
+          read MAJOR MINOR PATCH <<< "$VERSION_CODE_RAW"
+          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + (PATCH:-0)))
+          echo "APP_VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
+          echo "APP_VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+
+      # 編譯正式版 APK (Release Build)
+      - name: Build APK
+        run: ./gradlew assembleRelease
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          APP_VERSION_NAME: ${{ env.APP_VERSION_NAME }}
+          APP_VERSION_CODE: ${{ env.APP_VERSION_CODE }}
+
+      - name: Rename APK
+        run: mv app/build/outputs/apk/release/app-release.apk GAcc.apk
+
+      - name: Create Release and Upload APK
+        uses: softprops/action-gh-release@v2
+        with:
+          # 會將打好的 APK 檔上傳到 Github Releases
+          files: GAcc.apk
+          name: Release ${{ github.ref_name }}
+          generate_release_notes: true

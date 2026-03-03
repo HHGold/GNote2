@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">GNote</string>
+    <string name="default_web_client_id" translatable="false">613935979196-gipvid7iofmps3mlch7korkuml7prt2h.apps.googleusercontent.com</string>
+</resources>

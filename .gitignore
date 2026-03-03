@@ -1,0 +1,38 @@
+# Android
+*.apk
+*.aar
+*.ap_
+*.aab
+*.dex
+*.class
+bin/
+gen/
+out/
+build/
+.gradle/
+local.properties
+*.jks
+*.keystore
+*.p12
+google-services.json
+
+# Logs
+*.log
+build_log*.txt
+build_err.txt
+build_error.txt
+gradle_output.txt
+
+# Python
+*.py
+__pycache__/
+
+# Images
+icon*.png
+
+# Editor
+.idea/
+*.iml
+.navigation/
+captures/
+.DS_Store
