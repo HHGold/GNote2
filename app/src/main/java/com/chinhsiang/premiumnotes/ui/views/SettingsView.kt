@@ -27,6 +27,7 @@ import com.chinhsiang.premiumnotes.data.FirestoreSync
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -225,7 +226,10 @@ fun SettingsView(
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
                                 Text("版本與更新", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                Text("當前版本: v1.0.7", fontSize = 14.sp, color = secondaryText)
+                                val versionName = try {
+                                    context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                                } catch (e: Exception) { "1.0.8" }
+                                Text("當前版本: v$versionName", fontSize = 14.sp, color = secondaryText)
                             }
                         }
                         
@@ -234,10 +238,47 @@ fun SettingsView(
                         OutlinedButton(
                             onClick = {
                                 isCheckingUpdate = true
-                                coroutineScope.launch {
-                                    delay(1500)
-                                    isCheckingUpdate = false
-                                    Toast.makeText(context, "目前已是最新版本", Toast.LENGTH_SHORT).show()
+                                coroutineScope.launch(Dispatchers.IO) {
+                                    try {
+                                        val url = java.net.URL("https://api.github.com/repos/HHGold/GNote2/releases/latest")
+                                        val connection = url.openConnection() as java.net.HttpURLConnection
+                                        connection.requestMethod = "GET"
+                                        val responseText = connection.inputStream.bufferedReader().readText()
+                                        
+                                        val json = com.google.gson.JsonObject()
+                                        val parser = com.google.gson.JsonParser.parseString(responseText).asJsonObject
+                                        val latestTag = parser.get("tag_name").asString // 例如 "v1.0.8"
+                                        val latestVersionName = latestTag.replace("v", "")
+                                        
+                                        // 簡單解析版本號比對 (1.0.8 -> 10008)
+                                        fun parseVersion(v: String): Int {
+                                            return try {
+                                                val parts = v.split(".")
+                                                val major = parts.getOrNull(0)?.toInt() ?: 0
+                                                val minor = parts.getOrNull(1)?.toInt() ?: 0
+                                                val patch = parts.getOrNull(2)?.toInt() ?: 0
+                                                major * 10000 + minor * 100 + patch
+                                            } catch (e: Exception) { 0 }
+                                        }
+
+                                        val currentVersionName = context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                                        val currentVer = parseVersion(currentVersionName)
+                                        val latestVer = parseVersion(latestVersionName)
+
+                                        withContext(Dispatchers.Main) {
+                                            isCheckingUpdate = false
+                                            if (latestVer > currentVer) {
+                                                Toast.makeText(context, "發現新版本: $latestTag，請至 GitHub 下載更新", Toast.LENGTH_LONG).show()
+                                            } else {
+                                                Toast.makeText(context, "目前已是最新版本 ($currentVersionName)", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        withContext(Dispatchers.Main) {
+                                            isCheckingUpdate = false
+                                            Toast.makeText(context, "檢查更新失敗: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
                                 }
                             },
                             modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -257,8 +298,12 @@ fun SettingsView(
 
             item {
                 Spacer(modifier = Modifier.height(24.dp))
+                val versionName = try {
+                    context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                } catch (e: Exception) { "v1.0.8" }
+                
                 Text(
-                    "GNote v1.0.7",
+                    "GNote $versionName",
                     color = secondaryText.copy(alpha = 0.5f),
                     fontSize = 12.sp
                 )

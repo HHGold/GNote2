@@ -3,7 +3,7 @@ name: Android Release Build
 on:
   push:
     tags:
-      - 'v*' # 意思是當您上傳像 v1.0.0 這樣的標籤時，就會觸發自動打包
+      - 'v*' # 當您上傳像 v1.0.8 這樣的標籤時，觸發自動打包
 
 jobs:
   build:
@@ -15,10 +15,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: '17'
           distribution: 'temurin'
           cache: gradle
 
@@ -33,18 +33,15 @@ jobs:
       - name: Extract version from tag
         id: get_version
         run: |
-          # 取得標籤名稱 (例如 v1.0.5)
           TAG_NAME=${GITHUB_REF#refs/tags/}
-          # 去掉開頭的 v 變成 1.0.5
           VERSION_NAME=${TAG_NAME#v}
-          # 拆分版本號並計算出一個整數 Version Code (例如 10005)
+          # 格式化 Version Code (例如 1.0.8 -> 10008)
           VERSION_CODE_RAW=$(echo $VERSION_NAME | sed 's/\./ /g')
           read MAJOR MINOR PATCH <<< "$VERSION_CODE_RAW"
           VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + (PATCH:-0)))
           echo "APP_VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
           echo "APP_VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
 
-      # 編譯正式版 APK (Release Build)
       - name: Build APK
         run: ./gradlew assembleRelease
         env:
@@ -55,12 +52,11 @@ jobs:
           APP_VERSION_CODE: ${{ env.APP_VERSION_CODE }}
 
       - name: Rename APK
-        run: mv app/build/outputs/apk/release/app-release.apk GAcc.apk
+        run: mv app/build/outputs/apk/release/app-release.apk GNote2.apk
 
       - name: Create Release and Upload APK
         uses: softprops/action-gh-release@v2
         with:
-          # 會將打好的 APK 檔上傳到 Github Releases
-          files: GAcc.apk
+          files: GNote2.apk
           name: Release ${{ github.ref_name }}
           generate_release_notes: true
