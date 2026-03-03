@@ -18,8 +18,9 @@ import java.net.URL
 import kotlin.concurrent.thread
 
 object UpdateHelper {
-    private const val GITHUB_API_URL = "https://api.github.com/repos/HHGold/GAcc/releases/latest"
+    private const val GITHUB_API_URL = "https://api.github.com/repos/HHGold/GNote2/releases/latest"
     private var downloadId: Long = -1
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     fun checkForUpdate(context: Context, currentVersionName: String, onChecking: () -> Unit, onNoUpdate: () -> Unit, onUpdateFound: () -> Unit) {
         onChecking()
@@ -29,8 +30,8 @@ object UpdateHelper {
                 val connection = url.openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
-                connection.connectTimeout = 5000
-                connection.readTimeout = 5000
+                connection.connectTimeout = 8000
+                connection.readTimeout = 8000
 
                 if (connection.responseCode == HttpURLConnection.HTTP_OK) {
                     val reader = BufferedReader(InputStreamReader(connection.inputStream))
@@ -55,31 +56,27 @@ object UpdateHelper {
                                 }
                             }
                             if (apkUrl.isNotEmpty()) {
-                                runOnUi(context) {
+                                mainHandler.post {
                                     onUpdateFound()
                                     downloadUpdate(context, apkUrl, latestVersion)
                                 }
                             } else {
-                                runOnUi(context, onNoUpdate)
+                                mainHandler.post { onNoUpdate() }
                             }
                         } else {
-                            runOnUi(context, onNoUpdate)
+                            mainHandler.post { onNoUpdate() }
                         }
                     } else {
-                        runOnUi(context, onNoUpdate)
+                        mainHandler.post { onNoUpdate() }
                     }
                 } else {
-                    runOnUi(context, onNoUpdate)
+                    mainHandler.post { onNoUpdate() }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                runOnUi(context, onNoUpdate)
+                mainHandler.post { onNoUpdate() }
             }
         }
-    }
-
-    private fun runOnUi(context: Context, action: () -> Unit) {
-        (context as? android.app.Activity)?.runOnUiThread { action() }
     }
 
     private fun isNewerVersion(current: String, latest: String): Boolean {
@@ -102,10 +99,10 @@ object UpdateHelper {
     private fun downloadUpdate(context: Context, url: String, version: String) {
         try {
             val request = DownloadManager.Request(Uri.parse(url)).apply {
-                setTitle("更新 GAcc v$version")
+                setTitle("更新 GNote2 v$version")
                 setDescription("正在下載最新版本...")
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "GAcc_$version.apk")
+                setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "GNote2_$version.apk")
             }
 
             val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
@@ -137,7 +134,7 @@ object UpdateHelper {
 
     private fun installApk(context: Context, version: String) {
         try {
-            val file = java.io.File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "GAcc_$version.apk")
+            val file = java.io.File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "GNote2_$version.apk")
             if (!file.exists()) return
 
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
@@ -148,9 +145,10 @@ object UpdateHelper {
             context.startActivity(intent)
         } catch (e: Exception) {
             e.printStackTrace()
-            runOnUi(context) {
+            mainHandler.post {
                 Toast.makeText(context, "安裝失敗，無法開啟 APK", Toast.LENGTH_SHORT).show()
             }
         }
     }
+
 }

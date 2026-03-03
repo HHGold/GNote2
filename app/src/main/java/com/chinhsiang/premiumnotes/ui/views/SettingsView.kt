@@ -238,48 +238,23 @@ fun SettingsView(
                         OutlinedButton(
                             onClick = {
                                 isCheckingUpdate = true
-                                coroutineScope.launch(Dispatchers.IO) {
-                                    try {
-                                        val url = java.net.URL("https://api.github.com/repos/HHGold/GNote2/releases/latest")
-                                        val connection = url.openConnection() as java.net.HttpURLConnection
-                                        connection.requestMethod = "GET"
-                                        val responseText = connection.inputStream.bufferedReader().readText()
-                                        
-                                        val json = com.google.gson.JsonObject()
-                                        val parser = com.google.gson.JsonParser.parseString(responseText).asJsonObject
-                                        val latestTag = parser.get("tag_name").asString // 例如 "v1.0.8"
-                                        val latestVersionName = latestTag.replace("v", "")
-                                        
-                                        // 簡單解析版本號比對 (1.0.8 -> 10008)
-                                        fun parseVersion(v: String): Int {
-                                            return try {
-                                                val parts = v.split(".")
-                                                val major = parts.getOrNull(0)?.toInt() ?: 0
-                                                val minor = parts.getOrNull(1)?.toInt() ?: 0
-                                                val patch = parts.getOrNull(2)?.toInt() ?: 0
-                                                major * 10000 + minor * 100 + patch
-                                            } catch (e: Exception) { 0 }
-                                        }
-
-                                        val currentVersionName = context.packageManager.getPackageInfo(context.packageName, 0).versionName
-                                        val currentVer = parseVersion(currentVersionName)
-                                        val latestVer = parseVersion(latestVersionName)
-
-                                        withContext(Dispatchers.Main) {
-                                            isCheckingUpdate = false
-                                            if (latestVer > currentVer) {
-                                                Toast.makeText(context, "發現新版本: $latestTag，請至 GitHub 下載更新", Toast.LENGTH_LONG).show()
-                                            } else {
-                                                Toast.makeText(context, "目前已是最新版本 ($currentVersionName)", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    } catch (e: Exception) {
-                                        withContext(Dispatchers.Main) {
-                                            isCheckingUpdate = false
-                                            Toast.makeText(context, "檢查更新失敗: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-                                        }
+                                val currentVersionName = try {
+                                    context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                                } catch (e: Exception) { "1.0.0" }
+                                
+                                com.chinhsiang.premiumnotes.UpdateHelper.checkForUpdate(
+                                    context = context,
+                                    currentVersionName = currentVersionName,
+                                    onChecking = { isCheckingUpdate = true },
+                                    onNoUpdate = {
+                                        isCheckingUpdate = false
+                                        Toast.makeText(context, "目前已是最新版本 ($currentVersionName)", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onUpdateFound = {
+                                        isCheckingUpdate = false
+                                        // UpdateHelper handles the Toast and Download
                                     }
-                                }
+                                )
                             },
                             modifier = Modifier.fillMaxWidth().height(48.dp),
                             shape = RoundedCornerShape(10.dp),
