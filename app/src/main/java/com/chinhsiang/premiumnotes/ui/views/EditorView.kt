@@ -121,10 +121,11 @@ fun EditorView(
                 actions = {
                     // 分享按鈕
                     IconButton(onClick = { 
-                        if (sync.isLoggedIn()) {
-                            showShareDialog = true 
-                        } else {
+                        if (!sync.isLoggedIn()) {
                             Toast.makeText(context, "請先登入帳號才能分享筆記", Toast.LENGTH_SHORT).show()
+                        } else {
+                            // 即使是被分享者也可以點開看名單，但在 Dialog 內限制編輯
+                            showShareDialog = true 
                         }
                     }) {
                         Icon(Icons.Default.PersonAdd, contentDescription = "分享",
@@ -270,15 +271,19 @@ fun EditorView(
             title = { Text("分享筆記") },
             text = {
                 Column {
-                    Text("輸入對方的 Email 分享此筆記，對方即可查看並編輯。")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = shareEmail,
-                        onValueChange = { shareEmail = it },
-                        placeholder = { Text("Email 地址") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    if (!isSharedNote) {
+                        Text("輸入對方的 Email 分享此筆記，對方即可查看並編輯。")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = shareEmail,
+                            onValueChange = { shareEmail = it },
+                            placeholder = { Text("Email 地址") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        Text("此筆記為分享內容，只有擁有者具備編輯分享名單的權限。")
+                    }
                     
                     if (sharedWithEmails.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(16.dp))
@@ -286,34 +291,41 @@ fun EditorView(
                         sharedWithEmails.forEach { email ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(email, modifier = Modifier.weight(1f), fontSize = 14.sp)
-                                IconButton(onClick = {
-                                    sharedWithEmails = sharedWithEmails.filter { it != email }
-                                }) {
-                                    Icon(Icons.Default.Close, contentDescription = "移除", modifier = Modifier.size(16.dp))
+                                if (!isSharedNote) {
+                                    IconButton(onClick = {
+                                        sharedWithEmails = sharedWithEmails.filter { it != email }
+                                    }) {
+                                        Icon(Icons.Default.Close, contentDescription = "移除", modifier = Modifier.size(16.dp))
+                                    }
                                 }
                             }
                         }
+                    } else if (isSharedNote) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("目前無其他分享對象", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             },
             confirmButton = {
-                Button(onClick = {
-                    val trimmedEmail = shareEmail.trim()
-                    if (trimmedEmail.isEmpty()) return@Button
-                    
-                    val finalEmail = if (trimmedEmail.contains("@")) {
-                        trimmedEmail
-                    } else {
-                        "$trimmedEmail@gmail.com"
-                    }
+                if (!isSharedNote) {
+                    Button(onClick = {
+                        val trimmedEmail = shareEmail.trim()
+                        if (trimmedEmail.isEmpty()) return@Button
+                        
+                        val finalEmail = if (trimmedEmail.contains("@")) {
+                            trimmedEmail
+                        } else {
+                            "$trimmedEmail@gmail.com"
+                        }
 
-                    if (!sharedWithEmails.contains(finalEmail)) {
-                        sharedWithEmails = sharedWithEmails + finalEmail
-                        shareEmail = ""
-                    } else {
-                        Toast.makeText(context, "該 Email 已在名單中", Toast.LENGTH_SHORT).show()
-                    }
-                }) { Text("加入") }
+                        if (!sharedWithEmails.contains(finalEmail)) {
+                            sharedWithEmails = sharedWithEmails + finalEmail
+                            shareEmail = ""
+                        } else {
+                            Toast.makeText(context, "該 Email 已在名單中", Toast.LENGTH_SHORT).show()
+                        }
+                    }) { Text("加入") }
+                }
             },
             dismissButton = {
                 TextButton(onClick = { showShareDialog = false }) { Text("關閉") }
