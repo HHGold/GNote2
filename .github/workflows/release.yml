@@ -30,6 +30,11 @@ jobs:
           echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" > keystore.base64
           base64 --decode keystore.base64 > app/release.p12
 
+      - name: Decode Google Services JSON
+        run: |
+          echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" > google-services.base64
+          base64 --decode google-services.base64 > app/google-services.json
+
       - name: Extract version from tag
         id: get_version
         run: |
