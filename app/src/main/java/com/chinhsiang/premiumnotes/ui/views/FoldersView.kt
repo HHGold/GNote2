@@ -11,7 +11,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderShared
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -203,84 +205,137 @@ fun FoldersView(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
+        var searchQuery by remember { mutableStateOf("") }
+        val filteredNotes = remember(searchQuery, noteCountTick) {
+            if (searchQuery.isBlank()) emptyList()
+            else repo.getAllNotes().filter { 
+                it.title.contains(searchQuery, ignoreCase = true) || 
+                it.content.contains(searchQuery, ignoreCase = true)
+            }
+        }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 0.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Text(
-                    text = "我的資料夾",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    placeholder = { Text("搜尋", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    leadingIcon = { 
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                    ),
+                    singleLine = true
                 )
             }
 
-            if (folders.isEmpty()) {
-                item {
-                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        Text("尚無資料夾，點擊下方「新增資料夾」開始使用",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+            if (searchQuery.isNotBlank()) {
+                // 搜尋模式：顯示符合的筆記列表
+                if (filteredNotes.isEmpty()) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                            Text("找不到符合「$searchQuery」的備忘錄", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                } else {
+                    items(filteredNotes.size) { index ->
+                        val note = filteredNotes[index]
+                        NoteCard(
+                            title = note.title,
+                            preview = if (note.isLocked) "已上鎖 🔒" else note.content,
+                            date = formatDate(note.updatedAt),
+                            isLocked = note.isLocked,
+                            isShared = (note.sharedWithEmails?.isNotEmpty() == true),
+                            onClick = {
+                                // 導向編輯器
+                                onNavigateToFolder(note.folderId, "搜尋結果") // 這邊需要一個導向機制，可以用現有的
+                            },
+                            onLongClick = { }
+                        )
                     }
                 }
             } else {
-                item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surface)
-                    ) {
-                        folders.forEachIndexed { index, folder ->
-                            val noteCount = remember(folder.id, noteCountTick) {
-                                repo.getNotesInFolder(folder.id).size
+                // 原有的資料夾模式
+                if (folders.isEmpty()) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                            Text("尚無資料夾，點擊下方「新增資料夾」開始使用",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                        }
+                    }
+                } else {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surface)
+                        ) {
+                            folders.forEachIndexed { index, folder ->
+                                val noteCount = remember(folder.id, noteCountTick) {
+                                    repo.getNotesInFolder(folder.id).size
+                                }
+                                FolderItemRow(
+                                    name = folder.name,
+                                    count = noteCount,
+                                    showDivider = index < folders.size - 1,
+                                    onClick = { onNavigateToFolder(folder.id, folder.name) },
+                                    onLongClick = {
+                                        selectedFolder = folder
+                                        showActionSheet = true
+                                    },
+                                    isSharedFolder = false
+                                )
                             }
-                            FolderItemRow(
-                                name = folder.name,
-                                count = noteCount,
-                                showDivider = index < folders.size - 1,
-                                onClick = { onNavigateToFolder(folder.id, folder.name) },
-                                onLongClick = {
-                                    selectedFolder = folder
-                                    showActionSheet = true
-                                },
-                                isSharedFolder = false
-                            )
                         }
                     }
                 }
-            }
 
-            // 「共享給我」虛擬資料夾
-            if (sync.isLoggedIn() && currentSharedCount > 0) {
-                item {
-                    Text(
-                        text = "共享備忘錄",
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-                    )
-                }
-                item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surface)
-                    ) {
-                        FolderItemRow(
-                            name = "共享給我",
-                            count = currentSharedCount,
-                            showDivider = false,
-                            onClick = { onNavigateToFolder("shared_with_me", "共享給我") },
-                            onLongClick = { },
-                            isSharedFolder = true
+                // 「共享給我」虛擬資料夾
+                if (sync.isLoggedIn() && currentSharedCount > 0) {
+                    item {
+                        Text(
+                            text = "共享備忘錄",
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
                         )
+                    }
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surface)
+                        ) {
+                            FolderItemRow(
+                                name = "共享給我",
+                                count = currentSharedCount,
+                                showDivider = false,
+                                onClick = { onNavigateToFolder("shared_with_me", "共享給我") },
+                                onLongClick = { },
+                                isSharedFolder = true
+                            )
+                        }
                     }
                 }
             }

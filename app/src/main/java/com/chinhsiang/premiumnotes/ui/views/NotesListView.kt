@@ -128,7 +128,16 @@ fun NotesListView(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { },
+                title = {
+                    Box(modifier = Modifier.fillMaxWidth().padding(end = 64.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = folderName,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                },
                 navigationIcon = {
                     TextButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回", 
@@ -173,15 +182,7 @@ fun NotesListView(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            item {
-                Text(
-                    text = folderName,
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-            }
+            // Folder name is now in the TopAppBar
 
             if (notes.isEmpty()) {
                 item {
