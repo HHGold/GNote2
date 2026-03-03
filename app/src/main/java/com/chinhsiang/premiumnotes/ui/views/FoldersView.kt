@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderShared
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -46,6 +47,7 @@ fun FoldersView(
     var selectedFolder by remember { mutableStateOf<NoteFolder?>(null) }
     var showActionSheet by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
+    var sharedNoteCount by remember { mutableStateOf(0) }
     var renameText by remember { mutableStateOf("") }
 
     // 1. 一次性初始同步（往返合併，確保離線資料也被上傳）
@@ -107,7 +109,7 @@ fun FoldersView(
             .catch { }
             .collect { cloudNotes ->
                 withContext(Dispatchers.IO) {
-                    val local = repo.getAllNotes()
+                    val local = repo.getAllNotes().filter { it.folderId != "shared_with_me" }
                     val merged = mutableMapOf<String, Note>()
                     cloudNotes.forEach { merged[it.id] = it }
                     local.forEach { localNote ->
@@ -127,7 +129,9 @@ fun FoldersView(
                         }
                     }
                     val finalNotes = merged.values.filter { !com.chinhsiang.premiumnotes.data.DeletedNoteTracker.isDeleted(it.id) }.toList()
-                    repo.saveNotesFromSync(finalNotes)
+                    // 保留本機的共享筆記（shared_with_me）
+                    val sharedLocal = repo.getAllNotes().filter { it.folderId == "shared_with_me" }
+                    repo.saveNotesFromSync(finalNotes + sharedLocal)
                 }
                 // 筆記變動時，重新刷新資料夾列表以更新數量顯示
                 folders = repo.getFolders()
@@ -135,6 +139,28 @@ fun FoldersView(
             }
     }
 
+    // 4. 即時監聽「別人共享給我」的筆記
+    LaunchedEffect(Unit) {
+        if (!sync.isLoggedIn()) return@LaunchedEffect
+        sync.realtimeSharedNotesFlow()
+            .catch { }
+            .collect { sharedNotes ->
+                withContext(Dispatchers.IO) {
+                    // 將共享筆記的 folderId 統一改為 shared_with_me
+                    val mapped = sharedNotes.map { it.copy(folderId = "shared_with_me") }
+                    // 取出本機筆記中非共享的部分
+                    val ownNotes = repo.getAllNotes().filter { it.folderId != "shared_with_me" }
+                    repo.saveNotesFromSync(ownNotes + mapped)
+                }
+                sharedNoteCount = sharedNotes.size
+                noteCountTick++ // 刷新計數
+            }
+    }
+
+    // 在 Scaffold 之前計算共享筆記數量（Composable 頂層）
+    val currentSharedCount = remember(noteCountTick) {
+        repo.getNotesInFolder("shared_with_me").size
+    }
 
     Scaffold(
         topBar = {
@@ -221,9 +247,40 @@ fun FoldersView(
                                 onLongClick = {
                                     selectedFolder = folder
                                     showActionSheet = true
-                                }
+                                },
+                                isSharedFolder = false
                             )
                         }
+                    }
+                }
+            }
+
+            // 「共享給我」虛擬資料夾
+            if (sync.isLoggedIn() && currentSharedCount > 0) {
+                item {
+                    Text(
+                        text = "共享備忘錄",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                    )
+                }
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                    ) {
+                        FolderItemRow(
+                            name = "共享給我",
+                            count = currentSharedCount,
+                            showDivider = false,
+                            onClick = { onNavigateToFolder("shared_with_me", "共享給我") },
+                            onLongClick = { },
+                            isSharedFolder = true
+                        )
                     }
                 }
             }
@@ -339,7 +396,8 @@ fun FolderItemRow(
     count: Int,
     showDivider: Boolean,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    isSharedFolder: Boolean = false
 ) {
     Column {
         Row(
@@ -349,8 +407,12 @@ fun FolderItemRow(
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.Folder, contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+            Icon(
+                imageVector = if (isSharedFolder) Icons.Default.FolderShared else Icons.Default.Folder,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
             Spacer(modifier = Modifier.width(12.dp))
             Text(text = name, fontSize = 17.sp, color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.weight(1f))

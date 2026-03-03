@@ -64,46 +64,65 @@ fun NotesListView(
     LaunchedEffect(folderId) {
         if (!sync.isLoggedIn()) return@LaunchedEffect
         val myUid = auth.currentUser?.uid
-        sync.realtimeNotesFlow()
-            .catch { }
-            .collect { cloudNotes ->
-                withContext(Dispatchers.IO) {
-                    val local = repo.getAllNotes()
-                    val merged = mutableMapOf<String, Note>()
-                    
-                    // 1. 先放入雲端的所有資料（這是最真實的狀態）
-                    cloudNotes.forEach { merged[it.id] = it }
-                    
-                    // 2. 處理本機資料
-                    local.forEach { localNote ->
-                        val cloudNote = merged[localNote.id]
-                        if (cloudNote == null) {
-                            // 雲端沒有這筆資料
-                            if (localNote.ownerId == myUid) {
-                                if (localNote.isSynced) {
-                                    // 已經跟雲端建立過聯繫，但現在雲端沒了 -> 表示剛才在別台被刪除了
-                                    // 不加入 merged = 從本機抹除
+        
+        if (folderId == "shared_with_me") {
+            // 共享資料夾：監聽 sharedInbox
+            sync.realtimeSharedNotesFlow()
+                .catch { }
+                .collect { sharedNotes ->
+                    withContext(Dispatchers.IO) {
+                        val mapped = sharedNotes.map { it.copy(folderId = "shared_with_me") }
+                        // 取出本機筆記中非共享的部分
+                        val ownNotes = repo.getAllNotes().filter { it.folderId != "shared_with_me" }
+                        repo.saveNotesFromSync(ownNotes + mapped)
+                    }
+                    notes = repo.getNotesInFolder(folderId)
+                }
+        } else {
+            // 普通資料夾：監聽自己的筆記
+            sync.realtimeNotesFlow()
+                .catch { }
+                .collect { cloudNotes ->
+                    withContext(Dispatchers.IO) {
+                        val local = repo.getAllNotes().filter { it.folderId != "shared_with_me" }
+                        val merged = mutableMapOf<String, Note>()
+                        
+                        // 1. 先放入雲端的所有資料（這是最真實的狀態）
+                        cloudNotes.forEach { merged[it.id] = it }
+                        
+                        // 2. 處理本機資料
+                        local.forEach { localNote ->
+                            val cloudNote = merged[localNote.id]
+                            if (cloudNote == null) {
+                                // 雲端沒有這筆資料
+                                if (localNote.ownerId == myUid) {
+                                    if (localNote.isSynced) {
+                                        // 已經跟雲端建立過聯繫，但現在雲端沒了 -> 表示剛才在別台被刪除了
+                                        // 不加入 merged = 從本機抹除
+                                    } else {
+                                        // 它是全新本機筆記，還沒同步過 -> 保留它
+                                        merged[localNote.id] = localNote
+                                    }
                                 } else {
-                                    // 它是全新本機筆記，還沒同步過 -> 保留它
-                                    merged[localNote.id] = localNote
+                                    // 別人的分享被取消了 -> 抹除
                                 }
                             } else {
-                                // 別人的分享被取消了 -> 抹除
-                            }
-                        } else {
-                            // 兩邊都有：取 updatedAt 較新者
-                            if (localNote.updatedAt > cloudNote.updatedAt) {
-                                merged[localNote.id] = localNote
+                                // 兩邊都有：取 updatedAt 較新者
+                                if (localNote.updatedAt > cloudNote.updatedAt) {
+                                    merged[localNote.id] = localNote
+                                }
                             }
                         }
+                        
+                        // 3. 過濾掉墓碑標記
+                        val finalNotes = merged.values.filter { !DeletedNoteTracker.isDeleted(it.id) }.toList()
+                        // 保留共享筆記
+                        val sharedLocal = repo.getAllNotes().filter { it.folderId == "shared_with_me" }
+                        repo.saveNotesFromSync(finalNotes + sharedLocal)
                     }
-                    
-                    // 3. 過濾掉墓碑標記
-                    val finalNotes = merged.values.filter { !DeletedNoteTracker.isDeleted(it.id) }.toList()
-                    repo.saveNotesFromSync(finalNotes)
+                    notes = repo.getNotesInFolder(folderId)
                 }
-                notes = repo.getNotesInFolder(folderId)
-            }
+        }
     }
 
     Scaffold(
@@ -122,22 +141,25 @@ fun NotesListView(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    val user = auth.currentUser
-                    val newNote = repo.createNote(
-                        folderId = folderId,
-                        ownerId = user?.uid,
-                        ownerEmail = user?.email,
-                        ownerName = user?.displayName
-                    )
-                    onNavigateToEditor(newNote.id, folderId)
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Icon(Icons.Default.Edit, contentDescription = "撰寫新筆記")
+            // 在「共享給我」資料夾中不允許建立新筆記
+            if (folderId != "shared_with_me") {
+                FloatingActionButton(
+                    onClick = {
+                        val user = auth.currentUser
+                        val newNote = repo.createNote(
+                            folderId = folderId,
+                            ownerId = user?.uid,
+                            ownerEmail = user?.email,
+                            ownerName = user?.displayName
+                        )
+                        onNavigateToEditor(newNote.id, folderId)
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = "撰寫新筆記")
+                }
             }
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -173,6 +195,10 @@ fun NotesListView(
                     val sharedEmails = note.sharedWithEmails ?: emptyList()
                     val noteOwnerId = note.ownerId ?: ""
                     val isShared = sharedEmails.isNotEmpty() || (noteOwnerId.isNotEmpty() && noteOwnerId != myUid)
+                    // 如果是共享筆記，顯示擁有者名稱
+                    val ownerLabel = if (folderId == "shared_with_me" && noteOwnerId != myUid) {
+                        note.ownerName?.takeIf { it.isNotBlank() } ?: note.ownerEmail ?: ""
+                    } else ""
                     
                     NoteCard(
                         title = note.title,
@@ -180,6 +206,7 @@ fun NotesListView(
                         date = formatDate(note.updatedAt),
                         isLocked = note.isLocked,
                         isShared = isShared,
+                        ownerLabel = ownerLabel,
                         onClick = {
                             if (note.isLocked) {
                                 BiometricHelper.authenticate(
@@ -249,7 +276,7 @@ fun NotesListView(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun NoteCard(title: String, preview: String, date: String, isLocked: Boolean, isShared: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
+fun NoteCard(title: String, preview: String, date: String, isLocked: Boolean, isShared: Boolean, ownerLabel: String = "", onClick: () -> Unit, onLongClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -283,6 +310,14 @@ fun NoteCard(title: String, preview: String, date: String, isLocked: Boolean, is
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(text = date, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(end = 8.dp))
+                if (ownerLabel.isNotEmpty()) {
+                    Text(
+                        text = "來自 $ownerLabel",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
                 Text(text = preview.replace("\n", " "), fontSize = 14.sp,
                     color = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)

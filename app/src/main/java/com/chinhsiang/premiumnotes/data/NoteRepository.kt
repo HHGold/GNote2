@@ -121,7 +121,9 @@ class NoteRepository(context: Context) {
     fun getNotesInFolder(folderId: String): List<Note> {
         val allNotes = getAllNotes()
         return if (folderId == "all") {
-            allNotes.sortedByDescending { it.updatedAt }
+            // 「全部」不包含共享給我的筆記
+            allNotes.filter { it.folderId != "shared_with_me" }
+                .sortedByDescending { it.updatedAt }
         } else {
             allNotes.filter { it.folderId == folderId }
                 .sortedByDescending { it.updatedAt }

@@ -48,6 +48,13 @@ fun EditorView(
 
     // 載入筆記資料
     val note = remember(noteId) { repo.getNote(noteId) }
+    val auth = remember { com.google.firebase.auth.FirebaseAuth.getInstance() }
+    val myUid = auth.currentUser?.uid
+    // 判斷此筆記是否為別人共享給我的（非我擁有）
+    val isSharedNote = remember(note) {
+        val ownerId = note?.ownerId
+        !ownerId.isNullOrEmpty() && ownerId != myUid
+    }
     var title by remember { mutableStateOf(note?.title ?: "") }
     var content by remember { mutableStateOf(note?.content ?: "") }
     var isLocked by remember { mutableStateOf(note?.isLocked ?: false) }
@@ -71,7 +78,15 @@ fun EditorView(
             if (sync.isLoggedIn()) {
                 val updated = repo.getNote(noteId)
                 if (updated != null) {
-                    val success = withContext(Dispatchers.IO) { sync.uploadNote(updated) }
+                    val success = withContext(Dispatchers.IO) {
+                        if (isSharedNote) {
+                            // 共享筆記：回寫到擁有者端
+                            sync.updateSharedNote(updated)
+                        } else {
+                            // 自己的筆記：直接上傳
+                            sync.uploadNote(updated)
+                        }
+                    }
                     if (success) repo.markAsSynced(noteId)
                 }
             }
@@ -87,8 +102,13 @@ fun EditorView(
                         repo.saveNote(noteId, title, content, isLocked, sharedWithEmails)
                         if (sync.isLoggedIn()) {
                             coroutineScope.launch(Dispatchers.IO) {
-                                repo.getNote(noteId)?.let { 
-                                    if (sync.uploadNote(it)) repo.markAsSynced(noteId)
+                                repo.getNote(noteId)?.let { updatedNote ->
+                                    val success = if (isSharedNote) {
+                                        sync.updateSharedNote(updatedNote)
+                                    } else {
+                                        sync.uploadNote(updatedNote)
+                                    }
+                                    if (success) repo.markAsSynced(noteId)
                                 }
                             }
                         }

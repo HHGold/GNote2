@@ -23,6 +23,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.chinhsiang.premiumnotes.auth.GoogleAuthManager
+import com.chinhsiang.premiumnotes.data.FirestoreSync
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -143,6 +145,12 @@ fun SettingsView(
                                         val result = googleAuthManager.signIn(context as Activity)
                                         result.onSuccess { user ->
                                             currentUser = user
+                                            // 確保使用者 profile 已寫入 Firestore（以便共享功能透過 email 查找 UID）
+                                            coroutineScope.launch(Dispatchers.IO) {
+                                                try {
+                                                    FirestoreSync().ensureUserProfile()
+                                                } catch (_: Throwable) { }
+                                            }
                                         }.onFailure { error ->
                                             Toast.makeText(context, "失敗：${error.message}", Toast.LENGTH_SHORT).show()
                                         }
