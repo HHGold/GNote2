@@ -1,4 +1,7 @@
 import java.util.Properties
+import java.io.ByteArrayOutputStream
+
+
 
 plugins {
     id("com.android.application")
@@ -14,9 +17,36 @@ android {
         applicationId = "com.chinhsiang.premiumnotes"
         minSdk = 24
         targetSdk = 34
-        // 從環境變數讀取版本資訊 (用於 GitHub Actions)，防呆處理空字串
-        versionCode = System.getenv("APP_VERSION_CODE")?.takeIf { it.isNotBlank() }?.toIntOrNull() ?: 10009
-        versionName = System.getenv("APP_VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.01"
+        
+        // 取得最新的 Git Tag (例如 v1.0.8 -> 1.0.8)
+        val gitTag = try {
+            val stdout = ByteArrayOutputStream()
+            rootProject.exec {
+                commandLine("git", "describe", "--tags", "--abbrev=0")
+                standardOutput = stdout
+                isIgnoreExitValue = true
+            }
+            stdout.toString().trim().removePrefix("v").takeIf { it.isNotBlank() } ?: "1.0.0"
+        } catch (e: Exception) {
+            "1.0.0"
+        }
+
+        // 格式化 Version Code (例如 1.0.8 -> 10008)
+        fun calculateVersionCode(v: String): Int {
+            return try {
+                val parts = v.split(".")
+                val major = parts.getOrNull(0)?.toInt() ?: 1
+                val minor = parts.getOrNull(1)?.toInt() ?: 0
+                val patch = parts.getOrNull(2)?.toInt() ?: 0
+                major * 10000 + minor * 100 + patch
+            } catch (e: Exception) {
+                10000
+            }
+        }
+
+        // 從環境變數讀取版本資訊 (用於 GitHub Actions)，否則使用 Git Tag
+        versionCode = System.getenv("APP_VERSION_CODE")?.takeIf { it.isNotBlank() }?.toIntOrNull() ?: calculateVersionCode(gitTag)
+        versionName = System.getenv("APP_VERSION_NAME")?.takeIf { it.isNotBlank() } ?: gitTag
     }
 
 
