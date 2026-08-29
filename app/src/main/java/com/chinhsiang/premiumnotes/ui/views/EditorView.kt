@@ -2,6 +2,7 @@ package com.chinhsiang.premiumnotes.ui.views
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -46,6 +47,8 @@ fun EditorView(
     
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showShareDialog by remember { mutableStateOf(false) }
+    var showMoveDialog by remember { mutableStateOf(false) }
+    var currentFolderIdState by remember { mutableStateOf(folderId) }
     var shareEmail by remember { mutableStateOf("") }
 
     // 載入筆記資料
@@ -167,6 +170,13 @@ fun EditorView(
                     } else if (isLocked) {
                         // 如果原本有鎖但後來變共享(極少見)，自動解鎖以確保共享者可看，或至少不顯示鎖定按鈕
                         isLocked = false
+                    }
+
+                    if (!isSharedNote) {
+                        IconButton(onClick = { showMoveDialog = true }) {
+                            Icon(Icons.Default.DriveFileMove, contentDescription = "移動資料夾",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
 
                     IconButton(onClick = { showDeleteDialog = true }) {
@@ -334,6 +344,69 @@ fun EditorView(
             },
             dismissButton = {
                 TextButton(onClick = { showShareDialog = false }) { Text("關閉") }
+            }
+        )
+    }
+
+    if (showMoveDialog) {
+        val folders = remember { repo.getFolders() }
+        AlertDialog(
+            onDismissRequest = { showMoveDialog = false },
+            title = { Text("移動至資料夾") },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    folders.forEach { f ->
+                        val isSelected = (f.id == currentFolderIdState)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    repo.moveNoteToFolder(noteId, f.id)
+                                    currentFolderIdState = f.id
+                                    showMoveDialog = false
+                                    Toast.makeText(context, "已移動至「${f.name}」", Toast.LENGTH_SHORT).show()
+                                    if (sync.isLoggedIn()) {
+                                        coroutineScope.launch(Dispatchers.IO) {
+                                            repo.getNote(noteId)?.let { updatedNote ->
+                                                if (isSharedNote) {
+                                                    sync.updateSharedNote(updatedNote)
+                                                } else {
+                                                    sync.uploadNote(updatedNote)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(vertical = 12.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Folder,
+                                contentDescription = null,
+                                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = f.name,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "目前資料夾",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        Divider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    }
+                }
+            },
+            confirmButton = { },
+            dismissButton = {
+                TextButton(onClick = { showMoveDialog = false }) { Text("取消") }
             }
         )
     }

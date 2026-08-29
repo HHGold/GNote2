@@ -2,6 +2,8 @@ package com.chinhsiang.premiumnotes.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
+import com.chinhsiang.premiumnotes.data.db.*
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.util.UUID
@@ -10,7 +12,7 @@ import java.util.UUID
 data class NoteFolder(val id: String = UUID.randomUUID().toString(), val name: String)
 data class Note(
     val id: String = UUID.randomUUID().toString(),
-    val folderId: String,
+    var folderId: String,
     var title: String = "",
     var content: String = "",
     var isLocked: Boolean = false,
@@ -20,7 +22,7 @@ data class Note(
     var ownerEmail: String? = null,
     var ownerName: String? = null,
     var sharedWithEmails: List<String>? = null,
-    val isSynced: Boolean = false
+    var isSynced: Boolean = false
 )
 
 /** Session 內的刪除記錄（Tombstone）
@@ -32,31 +34,77 @@ object DeletedNoteTracker {
     fun clear(id: String) { _ids.remove(id) }
 }
 
-// 本機資料管理
-class NoteRepository(context: Context) {
+// 本機資料管理（基於 Android 官方推薦的 Room SQLite 資料庫）
+class NoteRepository(private val context: Context) {
+    private val db = AppDatabase.getInstance(context)
+    private val noteDao = db.noteDao()
+    private val folderDao = db.folderDao()
     private val prefs: SharedPreferences = context.getSharedPreferences("gnote_data", Context.MODE_PRIVATE)
     private val gson = Gson()
 
+    init {
+        migrateFromSharedPreferencesIfNeeded()
+        ensureDefaultFolder()
+    }
+
+    /** 首次升級時，無縫將舊版 SharedPreferences 中的資料遷移至 Room SQLite */
+    private fun migrateFromSharedPreferencesIfNeeded() {
+        val hasMigrated = prefs.getBoolean("migrated_to_room_v1", false)
+        if (!hasMigrated) {
+            try {
+                // 1. 遷移資料夾
+                val foldersJson = prefs.getString("folders", null)
+                if (!foldersJson.isNullOrEmpty()) {
+                    val folderType = object : TypeToken<List<NoteFolder>>() {}.type
+                    val oldFolders: List<NoteFolder>? = gson.fromJson(foldersJson, folderType)
+                    if (!oldFolders.isNullOrEmpty()) {
+                        folderDao.insertAll(oldFolders.mapIndexed { index, folder -> folder.toEntity(index) })
+                        Log.d("NoteRepository", "成功遷移 ${oldFolders.size} 個資料夾至 Room")
+                    }
+                }
+
+                // 2. 遷移筆記
+                val notesJson = prefs.getString("notes", null)
+                if (!notesJson.isNullOrEmpty()) {
+                    val noteType = object : TypeToken<List<Note>>() {}.type
+                    val oldNotes: List<Note>? = gson.fromJson(notesJson, noteType)
+                    if (!oldNotes.isNullOrEmpty()) {
+                        noteDao.insertAll(oldNotes.map { it.toEntity() })
+                        Log.d("NoteRepository", "成功遷移 ${oldNotes.size} 篇筆記至 Room")
+                    }
+                }
+
+                prefs.edit().putBoolean("migrated_to_room_v1", true).apply()
+            } catch (e: Exception) {
+                Log.e("NoteRepository", "SharedPreferences 資料遷移失敗", e)
+            }
+        }
+    }
+
     // --- 資料夾 CRUD ---
     fun getFolders(): MutableList<NoteFolder> {
-        val json = prefs.getString("folders", null) ?: return ensureDefaultFolder()
-        val type = object : TypeToken<MutableList<NoteFolder>>() {}.type
-        val folders: MutableList<NoteFolder> = gson.fromJson(json, type) ?: ensureDefaultFolder()
+        val entities = folderDao.getAllFolders()
+        val folders = entities.map { it.toDomain() }.toMutableList()
         if (folders.none { it.id == "all" }) {
-            folders.add(0, NoteFolder(id = "all", name = "全部"))
-            saveFolders(folders)
+            val allFolder = NoteFolder(id = "all", name = "全部")
+            folderDao.insert(allFolder.toEntity(0))
+            folders.add(0, allFolder)
         }
         return folders
     }
 
     private fun ensureDefaultFolder(): MutableList<NoteFolder> {
-        val folders = mutableListOf(NoteFolder(id = "all", name = "全部"))
-        saveFolders(folders)
+        val folders = folderDao.getAllFolders().map { it.toDomain() }.toMutableList()
+        if (folders.none { it.id == "all" }) {
+            val allFolder = NoteFolder(id = "all", name = "全部")
+            folderDao.insert(allFolder.toEntity(0))
+            folders.add(0, allFolder)
+        }
         return folders
     }
 
     fun saveFolders(folders: List<NoteFolder>) {
-        prefs.edit().putString("folders", gson.toJson(folders)).apply()
+        folderDao.insertAll(folders.mapIndexed { index, folder -> folder.toEntity(index) })
     }
 
     // 供 FirestoreSync 使用：完全覆蓋本機資料夾列表
@@ -65,115 +113,98 @@ class NoteRepository(context: Context) {
         if (mutable.none { it.id == "all" }) {
             mutable.add(0, NoteFolder(id = "all", name = "全部"))
         }
-        saveFolders(mutable)
+        folderDao.insertAll(mutable.mapIndexed { index, folder -> folder.toEntity(index) })
     }
 
     // 供 FirestoreSync 使用：完全覆蓋本機筆記列表
     fun saveNotesFromSync(notes: List<Note>) = saveAllNotes(notes)
 
     fun addFolder(name: String): NoteFolder? {
-        if (name.trim() == "全部") return null
-        val folders = getFolders()
-        if (folders.any { it.name == name.trim() }) return null
-        
-        val folder = NoteFolder(name = name.trim())
-        folders.add(folder)
-        saveFolders(folders)
-        return folder
+        val trimmed = name.trim()
+        if (trimmed == "全部" || trimmed.isEmpty()) return null
+        val existing = folderDao.getAllFolders()
+        if (existing.any { it.name == trimmed }) return null
+
+        val newFolder = NoteFolder(name = trimmed)
+        val maxIndex = existing.maxOfOrNull { it.orderIndex } ?: 0
+        folderDao.insert(newFolder.toEntity(maxIndex + 1))
+        return newFolder
     }
 
     fun renameFolder(id: String, newName: String) {
         if (id == "all") return // 不允許重命名「全部」
-        val folders = getFolders()
-        val index = folders.indexOfFirst { it.id == id }
-        if (index >= 0) {
-            folders[index] = folders[index].copy(name = newName)
-            saveFolders(folders)
-        }
+        folderDao.renameFolder(id, newName.trim())
     }
 
     fun deleteFolder(id: String) {
         if (id == "all") return // 不允許刪除「全部」
-        val folders = getFolders().filter { it.id != id }
-        saveFolders(folders)
-        
+        folderDao.deleteById(id)
+
         // 將該資料夾內的所有筆記搬移到「全部」
-        val notes = getAllNotes()
-        notes.forEachIndexed { index, note ->
-            if (note.folderId == id) {
-                notes[index] = note.copy(folderId = "all")
-            }
+        val notesInFolder = noteDao.getNotesInFolder(id)
+        notesInFolder.forEach {
+            noteDao.moveNoteToFolder(it.id, "all", System.currentTimeMillis())
         }
-        saveAllNotes(notes)
     }
 
     // --- 筆記 CRUD ---
     fun getAllNotes(): MutableList<Note> {
-        val json = prefs.getString("notes", null) ?: return mutableListOf()
-        val type = object : TypeToken<MutableList<Note>>() {}.type
-        return gson.fromJson(json, type) ?: mutableListOf()
+        return noteDao.getAllNotes().map { it.toDomain() }.toMutableList()
     }
 
     private fun saveAllNotes(notes: List<Note>) {
-        prefs.edit().putString("notes", gson.toJson(notes)).apply()
+        noteDao.insertAll(notes.map { it.toEntity() })
     }
 
     fun getNotesInFolder(folderId: String): List<Note> {
-        val allNotes = getAllNotes()
         return if (folderId == "all") {
             // 「全部」不包含共享給我的筆記
-            allNotes.filter { it.folderId != "shared_with_me" }
-                .sortedByDescending { it.updatedAt }
+            noteDao.getAllNonSharedNotes().map { it.toDomain() }
         } else {
-            allNotes.filter { it.folderId == folderId }
-                .sortedByDescending { it.updatedAt }
+            noteDao.getNotesInFolder(folderId).map { it.toDomain() }
         }
     }
 
     fun getNote(noteId: String): Note? {
-        return getAllNotes().find { it.id == noteId }
+        return noteDao.getNoteById(noteId)?.toDomain()
     }
 
     fun createNote(folderId: String, ownerId: String? = null, ownerEmail: String? = null, ownerName: String? = null): Note {
-        val notes = getAllNotes()
         val note = Note(
             folderId = folderId,
             ownerId = ownerId,
             ownerEmail = ownerEmail,
             ownerName = ownerName
         )
-        notes.add(note)
-        saveAllNotes(notes)
+        noteDao.insert(note.toEntity())
         return note
     }
 
     fun saveNote(noteId: String, title: String, content: String, isLocked: Boolean = false, sharedWithEmails: List<String>? = null) {
-        val notes = getAllNotes()
-        val index = notes.indexOfFirst { it.id == noteId }
-        if (index >= 0) {
-            notes[index] = notes[index].copy(
+        val existing = noteDao.getNoteById(noteId)
+        if (existing != null) {
+            val updated = existing.copy(
                 title = title,
                 content = content,
                 isLocked = isLocked,
-                sharedWithEmails = sharedWithEmails ?: notes[index].sharedWithEmails,
+                sharedWithEmails = sharedWithEmails ?: existing.sharedWithEmails,
                 updatedAt = System.currentTimeMillis(),
                 isSynced = false // 修改後重新標記為未同步
             )
-            saveAllNotes(notes)
+            noteDao.update(updated)
         }
+    }
+
+    /** 將筆記移動至新的資料夾 */
+    fun moveNoteToFolder(noteId: String, newFolderId: String) {
+        noteDao.moveNoteToFolder(noteId, newFolderId, System.currentTimeMillis())
     }
 
     fun deleteNote(noteId: String) {
-        val notes = getAllNotes().filter { it.id != noteId }
-        saveAllNotes(notes)
+        noteDao.deleteById(noteId)
     }
 
     fun markAsSynced(noteId: String, status: Boolean = true) {
-        val notes = getAllNotes()
-        val index = notes.indexOfFirst { it.id == noteId }
-        if (index >= 0) {
-            notes[index] = notes[index].copy(isSynced = status)
-            saveAllNotes(notes)
-        }
+        noteDao.markAsSynced(noteId, status)
     }
 }

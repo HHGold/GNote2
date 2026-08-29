@@ -1,7 +1,11 @@
 package com.chinhsiang.premiumnotes.ui.views
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -22,12 +26,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import com.chinhsiang.premiumnotes.auth.GoogleAuthManager
 import com.chinhsiang.premiumnotes.data.FirestoreSync
+import com.chinhsiang.premiumnotes.data.NoteRepository
+import com.google.gson.GsonBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,15 +48,89 @@ fun SettingsView(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val repo = remember { NoteRepository(context) }
     var currentUser by remember { mutableStateOf(googleAuthManager.getCurrentUser()) }
     var isLoading by remember { mutableStateOf(false) }
     var isCheckingUpdate by remember { mutableStateOf(false) }
-    
-    // 定義顏色 (符合截圖風格)
+
+    // 定義顏色
     val cardBackground = Color(0xFF1C1C1E)
     val premiumOrange = Color(0xFFEBB02D)
     val premiumGreen = Color(0xFF00C853)
+    val premiumBlue = Color(0xFF0A84FF)
     val secondaryText = Color(0xFF8E8E93)
+
+    // 產生備份 JSON 資料字串
+    fun generateBackupJson(): String {
+        val folders = repo.getFolders()
+        val notes = repo.getAllNotes()
+        val backupData = mapOf(
+            "appName" to "GNote2",
+            "version" to "1.0.3",
+            "exportedAt" to SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
+            "totalFolders" to folders.size,
+            "totalNotes" to notes.size,
+            "folders" to folders,
+            "notes" to notes
+        )
+        return GsonBuilder().setPrettyPrinting().create().toJson(backupData)
+    }
+
+    // 1. SAF 本地儲存檔案啟動器
+    val exportFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    val jsonContent = generateBackupJson()
+                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                        outputStream.write(jsonContent.toByteArray(Charsets.UTF_8))
+                    }
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "備份檔案已成功儲存至本機！", Toast.LENGTH_LONG).show()
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "匯出失敗：${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. 快速分享備份檔
+    fun shareBackupFile() {
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val jsonContent = generateBackupJson()
+                val fileName = "GNote2_Backup_${SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())}.json"
+                val cacheFile = File(context.cacheDir, fileName)
+                cacheFile.writeText(jsonContent, Charsets.UTF_8)
+
+                val contentUri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    cacheFile
+                )
+
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/json"
+                    putExtra(Intent.EXTRA_STREAM, contentUri)
+                    putExtra(Intent.EXTRA_SUBJECT, "GNote2 筆記備份檔案")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+
+                withContext(Dispatchers.Main) {
+                    context.startActivity(Intent.createChooser(shareIntent, "分享或儲存 GNote2 備份檔"))
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "分享失敗：${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -146,7 +231,6 @@ fun SettingsView(
                                         val result = googleAuthManager.signIn(context as Activity)
                                         result.onSuccess { user ->
                                             currentUser = user
-                                            // 確保使用者 profile 已寫入 Firestore（以便共享功能透過 email 查找 UID）
                                             coroutineScope.launch(Dispatchers.IO) {
                                                 try {
                                                     FirestoreSync().ensureUserProfile()
@@ -176,7 +260,67 @@ fun SettingsView(
                 }
             }
 
-            // 2. 隱私安全卡片
+            // 2. 本地資料備份與匯出卡片 (全新功能)
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBackground)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(premiumBlue),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.SaveAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column {
+                                Text("資料備份與匯出", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                Text("匯出所有筆記與資料夾為本地檔案", fontSize = 14.sp, color = secondaryText)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // 匯出至本地檔案按鈕
+                        Button(
+                            onClick = {
+                                val defaultFileName = "GNote2_Backup_${SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())}.json"
+                                exportFileLauncher.launch(defaultFileName)
+                            },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C2C2E))
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null, tint = premiumBlue, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("儲存備份至手機 (JSON)", color = Color.White, fontSize = 15.sp)
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // 快速分享備份檔按鈕
+                        OutlinedButton(
+                            onClick = { shareBackupFile() },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Color(0xFF3A3A3C)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, tint = secondaryText, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("分享備份檔 (LINE/雲端硬碟)", color = secondaryText, fontSize = 15.sp)
+                        }
+                    }
+                }
+            }
+
+            // 3. 隱私安全卡片
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -199,13 +343,13 @@ fun SettingsView(
                         Spacer(modifier = Modifier.width(16.dp))
                         Column {
                             Text("隱私安全", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            Text("資料使用 Google Firebase 加密儲存", fontSize = 14.sp, color = secondaryText)
+                            Text("本機使用 Room SQLite 資料庫，雲端使用 Google Firebase 加密儲存", fontSize = 14.sp, color = secondaryText)
                         }
                     }
                 }
             }
 
-            // 3. 版本與更新卡片
+            // 4. 版本與更新卡片
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -228,7 +372,7 @@ fun SettingsView(
                                 Text("版本與更新", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                 val versionName = try {
                                     context.packageManager.getPackageInfo(context.packageName, 0).versionName
-                                } catch (e: Exception) { "1.0.8" }
+                                } catch (e: Exception) { "1.0.3" }
                                 Text("當前版本: v$versionName", fontSize = 14.sp, color = secondaryText)
                             }
                         }
@@ -275,7 +419,7 @@ fun SettingsView(
                 Spacer(modifier = Modifier.height(24.dp))
                 val versionName = try {
                     context.packageManager.getPackageInfo(context.packageName, 0).versionName
-                } catch (e: Exception) { "v1.0.8" }
+                } catch (e: Exception) { "v1.0.3" }
                 
                 Text(
                     "GNote $versionName",

@@ -43,7 +43,6 @@ fun FoldersView(
     val coroutineScope = rememberCoroutineScope()
     var folders by remember { mutableStateOf<List<NoteFolder>>(repo.getFolders()) }
     var noteCountTick by remember { mutableStateOf(0) }
-    var isSyncing by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
     var selectedFolder by remember { mutableStateOf<NoteFolder?>(null) }
