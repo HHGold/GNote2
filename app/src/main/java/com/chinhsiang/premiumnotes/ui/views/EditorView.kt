@@ -5,8 +5,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -179,24 +181,15 @@ fun EditorView(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
+        val scrollState = rememberScrollState()
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .imePadding()
+                .verticalScroll(scrollState)
                 .padding(horizontal = 20.dp, vertical = 8.dp)
         ) {
-            // 隱藏共享名單文字 (依使用者要求不顯示)
-            /*
-            if (sharedWithEmails.isNotEmpty()) {
-                Text(
-                    text = "分享給: ${sharedWithEmails.joinToString(", ")}",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-            }
-            */
-
             TextField(
                 value = title,
                 onValueChange = { title = it },
@@ -228,7 +221,8 @@ fun EditorView(
                 },
                 textStyle = TextStyle(
                     fontSize = 17.sp,
-                    color = MaterialTheme.colorScheme.onBackground
+                    color = MaterialTheme.colorScheme.onBackground,
+                    lineHeight = 24.sp
                 ),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
@@ -237,8 +231,13 @@ fun EditorView(
                     unfocusedIndicatorColor = Color.Transparent,
                     cursorColor = MaterialTheme.colorScheme.primary
                 ),
-                modifier = Modifier.fillMaxWidth().weight(1f)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 350.dp)
             )
+
+            // 底部留白空間：確保長文章編輯或鍵盤彈起時，游標與內容能輕鬆滑動至視線舒適處，不會被鍵盤遮蔽
+            Spacer(modifier = Modifier.height(260.dp))
         }
     }
 

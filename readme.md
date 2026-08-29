@@ -2,7 +2,7 @@
 
 > **開發語言**：Kotlin + Jetpack Compose
 > **套件識別碼**：`com.chinhsiang.premiumnotes`
-> **當前版本**：v1.0.2 (2026-03-03)
+> **當前版本**：v1.0.3 (2026-08-29)
 ---
 
 ## 📖 專案簡介
