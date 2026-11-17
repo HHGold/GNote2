@@ -109,7 +109,12 @@ function showToast(msg, type = "info", icon = "ℹ️") {
   const container = $("toast-container");
   const toast = document.createElement("div");
   toast.className = `toast ${type}`;
-  toast.innerHTML = `<span class="toast-icon">${icon}</span><span>${msg}</span>`;
+  const iconEl = document.createElement("span");
+  iconEl.className = "toast-icon";
+  iconEl.textContent = icon;
+  const msgEl = document.createElement("span");
+  msgEl.textContent = String(msg);
+  toast.append(iconEl, msgEl);
   container.appendChild(toast);
   setTimeout(() => {
     toast.style.animation = "toastOut 0.3s ease forwards";
@@ -225,6 +230,9 @@ async function ensureUserProfile(user) {
       displayName: user.displayName ?? "",
       updatedAt: Date.now()
     }, { merge: true });
+    if (user.email) {
+      await setDoc(doc(db, "emailLookup", user.email.toLowerCase()), { uid: user.uid });
+    }
   } catch (e) {
     console.warn("ensureUserProfile 失敗", e);
   }
@@ -327,13 +335,13 @@ function renderFolders() {
       <span class="folder-count">${count}</span>
       ${!isSpecial ? `
       <div class="folder-actions">
-        <button class="folder-action-btn rename-btn" title="重新命名" data-id="${folder.id}">
+        <button class="folder-action-btn rename-btn" title="重新命名" data-id="${escapeHtml(folder.id)}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3l-9 9L9 16l1.5-3.5 9-9z"/>
           </svg>
         </button>
-        <button class="folder-action-btn delete delete-btn" title="刪除" data-id="${folder.id}">
+        <button class="folder-action-btn delete delete-btn" title="刪除" data-id="${escapeHtml(folder.id)}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"/>
             <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
@@ -603,7 +611,8 @@ async function saveCurrentNote() {
 
     if (isSharedNote && note.ownerId && note.ownerId !== uid) {
       // 回寫到擁有者的 notes 集合
-      await setDoc(doc(db, "users", note.ownerId, "notes", note.id), data, { merge: true });
+      await setDoc(doc(db, "users", note.ownerId, "notes", note.id),
+        { title, content, updatedAt }, { merge: true });
       // 更新自己的 sharedInbox
       await setDoc(doc(db, "users", uid, "sharedInbox", note.id), data, { merge: true });
     } else {

@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function verified() {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email != null;
+    }
+
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    // email -> uid 對照表（取代原本「所有人可讀 users」）
+    // 文件 ID 就是小寫 email；只能 get，不能 list，所以無法列舉全部帳號
+    match /emailLookup/{email} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create, update: if verified()
+        && email == myEmail()
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /users/{userId} {
+      // 個人 profile：只有本人
+      allow read, write: if signedIn() && request.auth.uid == userId;
+
+      match /folders/{folderId} {
+        allow read, write: if signedIn() && request.auth.uid == userId;
+      }
+
+      match /notes/{noteId} {
+        // 擁有者
+        allow read, write: if signedIn() && request.auth.uid == userId;
+
+        // 被共享者：可讀；只能更新 title / content / updatedAt
+        allow get: if verified()
+          && resource.data.sharedWithEmails is list
+          && myEmail() in resource.data.sharedWithEmails;
+        allow update: if verified()
+          && resource.data.sharedWithEmails is list
+          && myEmail() in resource.data.sharedWithEmails
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['title', 'content', 'updatedAt']);
+      }
+
+      match /sharedInbox/{noteId} {
+        // 只有收件人本人能讀
+        allow read: if signedIn() && request.auth.uid == userId;
+
+        // 收件人可移除自己的；擁有者可撤回共享
+        allow delete: if signedIn()
+          && (request.auth.uid == userId
+              || resource.data.ownerId == request.auth.uid);
+
+        // 只有擁有者能投遞，且收件人 email 必須在共享名單內
+        allow create: if signedIn()
+          && request.resource.data.ownerId == request.auth.uid
+          && request.resource.data.sharedWithEmails is list
+          && get(/databases/$(database)/documents/users/$(userId)).data.email
+               in request.resource.data.sharedWithEmails;
+
+        // 更新：ownerId 不可變；擁有者或名單內的人才可更新；
+        // 非擁有者不能改共享名單
+        allow update: if signedIn()
+          && request.resource.data.ownerId == resource.data.ownerId
+          && (request.auth.uid == resource.data.ownerId
+              || (verified()
+                  && myEmail() in resource.data.sharedWithEmails
+                  && request.resource.data.sharedWithEmails
+                       == resource.data.sharedWithEmails));
+      }
+    }
+  }
+}

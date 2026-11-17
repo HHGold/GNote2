@@ -98,6 +98,11 @@ object UpdateHelper {
 
     private fun downloadUpdate(context: Context, url: String, version: String) {
         try {
+            // 只接受來自本專案 GitHub release 的 HTTPS 下載連結
+            if (!url.startsWith("https://github.com/HHGold/GNote2/releases/download/")) {
+                Toast.makeText(context, "更新來源不受信任，已取消", Toast.LENGTH_SHORT).show()
+                return
+            }
             val request = DownloadManager.Request(Uri.parse(url)).apply {
                 setTitle("更新 GNote2 v$version")
                 setDescription("正在下載最新版本...")
@@ -122,7 +127,7 @@ object UpdateHelper {
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_EXPORTED)
+                context.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_NOT_EXPORTED)
             } else {
                 context.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
             }

@@ -204,33 +204,27 @@ class FirestoreSync {
     }
 
     /** 當筆記不再共享給任何人時，清理所有使用者的 sharedInbox 中的該筆記（備用方法） */
-    private suspend fun cleanupSharedInboxForNote(noteId: String) {
-        try {
-            val snapshots = db.collectionGroup("sharedInbox")
-                .whereEqualTo("id", noteId)
-                .get().await()
-            for (doc in snapshots.documents) {
-                doc.reference.delete().await()
-                Log.d("FirestoreSync", "已清理 sharedInbox 中的筆記 $noteId")
+    private suspend fun cleanupSharedInboxForNote(noteId: String, sharedEmails: List<String>) {
+        for (e in sharedEmails) {
+            try {
+                val targetUid = findUidByEmail(e)
+                if (targetUid != null) {
+                    sharedInboxRef(targetUid).document(noteId).delete().await()
+                }
+            } catch (t: Throwable) {
+                Log.w("FirestoreSync", "清理共享副本失敗", t)
             }
-        } catch (e: Throwable) {
-            Log.w("FirestoreSync", "cleanupSharedInboxForNote 失敗（可能缺少索引）", e)
         }
     }
 
     /** 根據 email 查詢使用者的 UID */
     private suspend fun findUidByEmail(email: String): String? {
         return try {
-            // 先查 Firestore 中的使用者名冊
-            val snapshot = db.collection("users")
-                .whereEqualTo("email", email)
-                .limit(1)
+            // 查 emailLookup/{email}（只允許 get，不允許列舉）
+            val doc = db.collection("emailLookup")
+                .document(email.lowercase().trim())
                 .get().await()
-            if (snapshot.documents.isNotEmpty()) {
-                snapshot.documents[0].id
-            } else {
-                null
-            }
+            doc.getString("uid")
         } catch (e: Throwable) {
             Log.w("FirestoreSync", "findUidByEmail 失敗", e)
             null
@@ -250,7 +244,10 @@ class FirestoreSync {
                 "updatedAt" to System.currentTimeMillis()
             )
             db.collection("users").document(uid).set(data, SetOptions.merge()).await()
-            Log.d("FirestoreSync", "已更新使用者 profile: $email")
+            // 公開的 email -> uid 對照（供共享功能使用）
+            db.collection("emailLookup").document(email.lowercase().trim())
+                .set(mapOf("uid" to uid)).await()
+            Log.d("FirestoreSync", "已更新使用者 profile")
         } catch (e: Throwable) {
             Log.w("FirestoreSync", "ensureUserProfile 失敗", e)
         }
@@ -259,9 +256,12 @@ class FirestoreSync {
     suspend fun deleteNote(noteId: String) {
         try {
             val uid = uid ?: return
-            notesRef(uid).document(noteId).delete().await()
+            val ref = notesRef(uid).document(noteId)
+            val sharedEmails = (ref.get().await().get("sharedWithEmails") as? List<*>)
+                ?.filterIsInstance<String>() ?: emptyList()
+            ref.delete().await()
             // 同時清理所有 sharedInbox 中的副本
-            cleanupSharedInboxForNote(noteId)
+            cleanupSharedInboxForNote(noteId, sharedEmails)
         } catch (_: Throwable) { }
     }
 
@@ -414,7 +414,13 @@ class FirestoreSync {
             val sharedData = ownerData // 相同內容
 
             // 回寫到擁有者的 notes 集合
-            notesRef(ownerUid).document(note.id).set(ownerData, SetOptions.merge()).await()
+            // 安全規則只允許共享者更新 title / content / updatedAt
+            val ownerUpdate = mapOf(
+                "title" to note.title,
+                "content" to note.content,
+                "updatedAt" to note.updatedAt
+            )
+            notesRef(ownerUid).document(note.id).set(ownerUpdate, SetOptions.merge()).await()
 
             // 同時更新自己 sharedInbox 中的副本
             sharedInboxRef(myUid).document(note.id).set(sharedData, SetOptions.merge()).await()
