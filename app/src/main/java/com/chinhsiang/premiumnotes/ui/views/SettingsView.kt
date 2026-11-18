@@ -52,6 +52,37 @@ fun SettingsView(
     var currentUser by remember { mutableStateOf(googleAuthManager.getCurrentUser()) }
     var isLoading by remember { mutableStateOf(false) }
     var isCheckingUpdate by remember { mutableStateOf(false) }
+    var showSignOutConfirm by remember { mutableStateOf(false) }
+    var unsyncedCount by remember { mutableStateOf(0) }
+
+    // 登出：清除本機資料，避免換帳號後看到上一個帳號的筆記（雲端資料不受影響）
+    fun doSignOut() {
+        coroutineScope.launch {
+            withContext(Dispatchers.IO) { repo.clearAllLocalData() }
+            googleAuthManager.signOut()
+            currentUser = null
+            Toast.makeText(context, "已登出，本機資料已清除", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    if (showSignOutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showSignOutConfirm = false },
+            title = { Text("尚有未同步的筆記") },
+            text = {
+                Text("有 $unsyncedCount 則筆記還沒同步到雲端，登出會一併清除本機資料，這些筆記將無法復原。確定要登出嗎？")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSignOutConfirm = false
+                    doSignOut()
+                }) { Text("仍要登出", color = Color.Red) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSignOutConfirm = false }) { Text("取消") }
+            }
+        )
+    }
 
     // 定義顏色
     val cardBackground = Color(0xFF1C1C1E)
@@ -202,9 +233,15 @@ fun SettingsView(
                             
                             Button(
                                 onClick = {
-                                    googleAuthManager.signOut()
-                                    currentUser = null
-                                    Toast.makeText(context, "已登出", Toast.LENGTH_SHORT).show()
+                                    coroutineScope.launch {
+                                        val unsynced = withContext(Dispatchers.IO) { repo.unsyncedNoteCount() }
+                                        if (unsynced > 0) {
+                                            unsyncedCount = unsynced
+                                            showSignOutConfirm = true
+                                        } else {
+                                            doSignOut()
+                                        }
+                                    }
                                 },
                                 modifier = Modifier.fillMaxWidth().height(56.dp),
                                 shape = RoundedCornerShape(12.dp),
@@ -230,6 +267,7 @@ fun SettingsView(
                                     coroutineScope.launch {
                                         val result = googleAuthManager.signIn(context as Activity)
                                         result.onSuccess { user ->
+                                            withContext(Dispatchers.IO) { repo.handleAccountSwitch(user.uid) }
                                             currentUser = user
                                             coroutineScope.launch(Dispatchers.IO) {
                                                 try {

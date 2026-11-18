@@ -76,8 +76,9 @@ service cloud.firestore {
               || resource.data.ownerId == request.auth.uid);
 
         // 只有擁有者能投遞，且收件人 email 必須在共享名單內
-        allow create: if signedIn()
+        allow create: if verified()
           && request.resource.data.ownerId == request.auth.uid
+          && request.resource.data.get("ownerEmail", "").lower() == myEmail()
           && request.resource.data.sharedWithEmails is list
           && validNote(request.resource.data)
           && get(/databases/$(database)/documents/users/$(userId)).data.email

@@ -81,6 +81,31 @@ class NoteRepository(private val context: Context) {
         }
     }
 
+    // --- 帳號切換：避免不同帳號看到彼此的本機資料 ---
+
+    /** 尚未同步到雲端、登出後會遺失的筆記數量（不含別人共享給我的） */
+    fun unsyncedNoteCount(): Int =
+        noteDao.getAllNotes().count { !it.isSynced && it.folderId != "shared_with_me" }
+
+    /** 清除所有本機筆記與資料夾（登出時呼叫） */
+    fun clearAllLocalData() {
+        noteDao.deleteAll()
+        folderDao.deleteAll()
+        prefs.edit().remove("last_uid").apply()
+        ensureDefaultFolder()
+    }
+
+    /** 登入後呼叫：若這台裝置上的資料屬於另一個帳號，先清掉，避免混入新帳號的雲端 */
+    fun handleAccountSwitch(newUid: String) {
+        val last = prefs.getString("last_uid", null)
+        if (last != null && last != newUid) {
+            noteDao.deleteAll()
+            folderDao.deleteAll()
+            ensureDefaultFolder()
+        }
+        prefs.edit().putString("last_uid", newUid).apply()
+    }
+
     // --- 資料夾 CRUD ---
     fun getFolders(): MutableList<NoteFolder> {
         val entities = folderDao.getAllFolders()

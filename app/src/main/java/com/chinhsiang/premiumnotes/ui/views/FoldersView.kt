@@ -56,6 +56,9 @@ fun FoldersView(
         try {
             kotlinx.coroutines.delay(800)
             if (sync.isLoggedIn()) {
+                withContext(Dispatchers.IO) {
+                    com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid?.let { repo.handleAccountSwitch(it) }
+                }
                 val (mergedFolders, mergedNotes) = withContext(Dispatchers.IO) {
                     sync.fullSync(repo.getFolders(), repo.getAllNotes())
                 }
