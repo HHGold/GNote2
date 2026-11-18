@@ -50,5 +50,5 @@ users/{uid}/
 ## ⚙️ 部署到正式環境
 
 若要讓其他人也能使用，需要：
-1. 把 `web/` 資料夾部署到任何靜態托管服務（GitHub Pages、Firebase Hosting 等）
+1. 把 `gd/` 資料夾部署到任何靜態托管服務（GitHub Pages、Firebase Hosting 等）
 2. 在 Firebase Console → Authentication → 設定 → 授權網域 新增你的網域名稱
