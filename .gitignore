@@ -36,3 +36,6 @@ icon*.png
 .navigation/
 captures/
 .DS_Store
+
+# Local backups (keystore, old APKs) - never commit
+backup/
