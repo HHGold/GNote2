@@ -29,7 +29,7 @@ import {
 // Firebase 設定（與 App 相同的 Firebase 專案）
 // ============================================================
 const firebaseConfig = {
-  apiKey: "AIzaSyCYQB-ik7DH1BFOs8XZusXsJ8w2hjDQNXQ",
+  apiKey: "AIzaSyClzDXIavFMSxx435VXni54u-hzlQbz_H4",
   // ⚠️ authDomain 說明：
   // 目前使用 Firebase 預設網域，Google 登入彈窗會顯示 "noteapp-488414.firebaseapp.com"
   // 若部署到 wisepro.com.tw 並設定 Firebase Hosting 自訂網域後，

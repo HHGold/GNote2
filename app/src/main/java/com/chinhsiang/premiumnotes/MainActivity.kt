@@ -56,6 +56,11 @@ fun GNoteTheme(
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 禁止截圖與最近工作畫面預覽，避免已上鎖筆記外洩
+        window.setFlags(
+            android.view.WindowManager.LayoutParams.FLAG_SECURE,
+            android.view.WindowManager.LayoutParams.FLAG_SECURE
+        )
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         val googleAuthManager = GoogleAuthManager(this)

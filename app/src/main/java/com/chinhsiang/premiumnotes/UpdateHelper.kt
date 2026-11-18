@@ -48,17 +48,21 @@ object UpdateHelper {
                         val assets = jsonPart.getJSONArray("assets")
                         if (assets.length() > 0) {
                             var apkUrl = ""
+                            var shaUrl = ""
                             for (i in 0 until assets.length()) {
                                 val asset = assets.getJSONObject(i)
-                                if (asset.getString("name").endsWith(".apk")) {
+                                val assetName = asset.getString("name")
+                                if (assetName.endsWith(".apk") && apkUrl.isEmpty()) {
                                     apkUrl = asset.getString("browser_download_url")
-                                    break
+                                } else if (assetName.endsWith(".apk.sha256")) {
+                                    shaUrl = asset.getString("browser_download_url")
                                 }
                             }
-                            if (apkUrl.isNotEmpty()) {
+                            val expectedSha = if (shaUrl.startsWith(TRUSTED_PREFIX)) fetchSha256(shaUrl) else null
+                            if (apkUrl.isNotEmpty() && expectedSha != null) {
                                 mainHandler.post {
                                     onUpdateFound()
-                                    downloadUpdate(context, apkUrl, latestVersion)
+                                    downloadUpdate(context, apkUrl, latestVersion, expectedSha)
                                 }
                             } else {
                                 mainHandler.post { onNoUpdate() }
@@ -79,6 +83,48 @@ object UpdateHelper {
         }
     }
 
+    private const val TRUSTED_PREFIX = "https://github.com/HHGold/GNote2/releases/download/"
+
+    /** 下載 .sha256 檔並取出第一個雜湊值（64 位十六進位）。 */
+    private fun fetchSha256(url: String): String? {
+        return try {
+            val conn = URL(url).openConnection() as HttpURLConnection
+            conn.connectTimeout = 8000
+            conn.readTimeout = 8000
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
+            val hash = text.trim().split(Regex("\\s+")).firstOrNull()?.lowercase()
+            if (hash != null && Regex("[0-9a-f]{64}").matches(hash)) hash else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun verifyAndInstall(context: Context, version: String, expectedSha: String) {
+        val file = java.io.File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "GNote2_$version.apk")
+        val actual = try {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buf = ByteArray(8192)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    md.update(buf, 0, n)
+                }
+            }
+            md.digest().joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            ""
+        }
+        if (actual != expectedSha) {
+            file.delete()
+            mainHandler.post {
+                Toast.makeText(context, "更新檔驗證失敗，已取消安裝", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        mainHandler.post { installApk(context, version) }
+    }
+
     private fun isNewerVersion(current: String, latest: String): Boolean {
         return try {
             val currParts = current.split(".").map { it.toInt() }
@@ -96,13 +142,15 @@ object UpdateHelper {
         }
     }
 
-    private fun downloadUpdate(context: Context, url: String, version: String) {
+    private fun downloadUpdate(context: Context, url: String, version: String, expectedSha: String) {
         try {
             // 只接受來自本專案 GitHub release 的 HTTPS 下載連結
-            if (!url.startsWith("https://github.com/HHGold/GNote2/releases/download/")) {
+            if (!url.startsWith(TRUSTED_PREFIX)) {
                 Toast.makeText(context, "更新來源不受信任，已取消", Toast.LENGTH_SHORT).show()
                 return
             }
+            // 清掉同名的舊檔，避免 DownloadManager 改名後驗證到錯的檔案
+            java.io.File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "GNote2_$version.apk").delete()
             val request = DownloadManager.Request(Uri.parse(url)).apply {
                 setTitle("更新 GNote2 v$version")
                 setDescription("正在下載最新版本...")
@@ -118,7 +166,14 @@ object UpdateHelper {
                 override fun onReceive(ctx: Context, intent: Intent) {
                     val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
                     if (id == downloadId) {
-                        installApk(context, version)
+                        val pending = goAsync()
+                        thread {
+                            try {
+                                verifyAndInstall(context, version, expectedSha)
+                            } finally {
+                                pending.finish()
+                            }
+                        }
                         try {
                             ctx.unregisterReceiver(this)
                         } catch (e: Exception) {}

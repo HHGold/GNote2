@@ -16,6 +16,15 @@ service cloud.firestore {
       return request.auth.token.email.lower();
     }
 
+    // 欄位型別與大小檢查（避免寫入超大或結構異常的資料）
+    function validNote(d) {
+      return d.get("id", "") is string
+        && d.get("title", "") is string && d.get("title", "").size() <= 500
+        && d.get("content", "") is string && d.get("content", "").size() <= 200000
+        && d.get("sharedWithEmails", []) is list
+        && d.get("sharedWithEmails", []).size() <= 50;
+    }
+
     // email -> uid 對照表（取代原本「所有人可讀 users」）
     // 文件 ID 就是小寫 email；只能 get，不能 list，所以無法列舉全部帳號
     match /emailLookup/{email} {
@@ -33,12 +42,17 @@ service cloud.firestore {
       allow read, write: if signedIn() && request.auth.uid == userId;
 
       match /folders/{folderId} {
-        allow read, write: if signedIn() && request.auth.uid == userId;
+        allow read, delete: if signedIn() && request.auth.uid == userId;
+        allow create, update: if signedIn() && request.auth.uid == userId
+          && request.resource.data.get("name", "") is string
+          && request.resource.data.get("name", "").size() <= 200;
       }
 
       match /notes/{noteId} {
         // 擁有者
-        allow read, write: if signedIn() && request.auth.uid == userId;
+        allow read, delete: if signedIn() && request.auth.uid == userId;
+        allow create, update: if signedIn() && request.auth.uid == userId
+          && validNote(request.resource.data);
 
         // 被共享者：可讀；只能更新 title / content / updatedAt
         allow get: if verified()
@@ -48,7 +62,8 @@ service cloud.firestore {
           && resource.data.sharedWithEmails is list
           && myEmail() in resource.data.sharedWithEmails
           && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['title', 'content', 'updatedAt']);
+               .hasOnly(['title', 'content', 'updatedAt'])
+          && validNote(request.resource.data);
       }
 
       match /sharedInbox/{noteId} {
@@ -64,6 +79,7 @@ service cloud.firestore {
         allow create: if signedIn()
           && request.resource.data.ownerId == request.auth.uid
           && request.resource.data.sharedWithEmails is list
+          && validNote(request.resource.data)
           && get(/databases/$(database)/documents/users/$(userId)).data.email
                in request.resource.data.sharedWithEmails;
 
@@ -71,6 +87,7 @@ service cloud.firestore {
         // 非擁有者不能改共享名單
         allow update: if signedIn()
           && request.resource.data.ownerId == resource.data.ownerId
+          && validNote(request.resource.data)
           && (request.auth.uid == resource.data.ownerId
               || (verified()
                   && myEmail() in resource.data.sharedWithEmails

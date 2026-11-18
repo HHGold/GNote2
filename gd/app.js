@@ -31,7 +31,7 @@ import {
 // Firebase 設定（與 App 相同的 Firebase 專案）
 // ============================================================
 const firebaseConfig = {
-  apiKey: "AIzaSyCYQB-ik7DH1BFOs8XZusXsJ8w2hjDQNXQ",
+  apiKey: "AIzaSyClzDXIavFMSxx435VXni54u-hzlQbz_H4",
   authDomain: "noteapp-488414.firebaseapp.com",
   projectId: "noteapp-488414",
   storageBucket: "noteapp-488414.firebasestorage.app",

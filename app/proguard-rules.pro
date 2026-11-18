@@ -7,3 +7,6 @@
 -keepattributes *Annotation*
 -dontwarn com.google.gson.**
 -keep class com.google.gson.** { *; }
+
+# 資料模型與 Room（以反射序列化 / 備份匯出使用）
+-keep class com.chinhsiang.premiumnotes.data.** { *; }
